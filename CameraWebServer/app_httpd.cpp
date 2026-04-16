@@ -151,8 +151,79 @@ static size_t jpg_encode_stream(void *arg, size_t index, const void *data, size_
   return len;
 }
 
-static void edgeDetectBinary(const uint8_t *src, uint8_t *dst, int w, int h, uint8_t thresholdValue) {
+void gaussianBlur(const uint8_t *src, uint8_t *dst, int w, int h) {
+  for (int y = 1; y < h - 1; y++) {
+    for (int x = 1; x < w - 1; x++) {
+      int sum =
+        src[(y - 1) * w + (x - 1)] + 2 * src[(y - 1) * w + x] + src[(y - 1) * w + (x + 1)] +
+        2 * src[y * w + (x - 1)]     + 4 * src[y * w + x]     + 2 * src[y * w + (x + 1)] +
+        src[(y + 1) * w + (x - 1)] + 2 * src[(y + 1) * w + x] + src[(y + 1) * w + (x + 1)];
+
+      dst[y * w + x] = sum / 16;
+    }
+  }
+
+  // rubovi na 0 (isto kao prije)
+  for (int x = 0; x < w; x++) {
+    dst[x] = 0;
+    dst[(h - 1) * w + x] = 0;
+  }
+  for (int y = 0; y < h; y++) {
+    dst[y * w] = 0;
+    dst[y * w + (w - 1)] = 0;
+  }
+}
+
+static void edgePrewittDetectBinary(const uint8_t *src, uint8_t *dst, int w, int h, uint8_t thresholdValue) {
+  // pomoćni buffer za blur
+  uint8_t *blur = (uint8_t*)malloc(w * h);
+  if (blur == NULL) {
+    return;
+  }
+
+  // 1. Gaussian blur
+  gaussianBlur(src, blur, w, h);
+
+  // 2. rubovi na 0
+  for (int x = 0; x < w; x++) {
+    dst[x] = 0;
+    dst[(h - 1) * w + x] = 0;
+  }
+  for (int y = 0; y < h; y++) {
+    dst[y * w] = 0;
+    dst[y * w + (w - 1)] = 0;
+  }
+
+  // 3. Prewitt filter
+  for (int y = 1; y < h - 1; y++) {
+    for (int x = 1; x < w - 1; x++) {
+      int gx =
+        -blur[(y - 1) * w + (x - 1)] - blur[y * w + (x - 1)] - blur[(y + 1) * w + (x - 1)] +
+         blur[(y - 1) * w + (x + 1)] + blur[y * w + (x + 1)] + blur[(y + 1) * w + (x + 1)];
+
+      int gy =
+        -blur[(y - 1) * w + (x - 1)] - blur[(y - 1) * w + x] - blur[(y - 1) * w + (x + 1)] +
+         blur[(y + 1) * w + (x - 1)] + blur[(y + 1) * w + x] + blur[(y + 1) * w + (x + 1)];
+
+      int mag = abs(gx) + abs(gy);
+
+      dst[y * w + x] = (mag > thresholdValue) ? 255 : 0;
+    }
+  }
+
+  free(blur);
+}
+
+
+static void edgeSobelDetectBinary(const uint8_t *src, uint8_t *dst, int w, int h, uint8_t thresholdValue) {
   // Počisti rubove slike
+  // pomoćni buffer za blur
+  uint8_t *blur = (uint8_t*)malloc(w * h);
+
+  // 1. Gaussian blur
+  gaussianBlur(src, blur, w, h);
+
+  // 2. rubovi na 0
   for (int x = 0; x < w; x++) {
     dst[x] = 0;
     dst[(h - 1) * w + x] = 0;
@@ -177,6 +248,46 @@ static void edgeDetectBinary(const uint8_t *src, uint8_t *dst, int w, int h, uin
       dst[y * w + x] = (mag > thresholdValue) ? 255 : 0;
     }
   }
+  free(blur);
+}
+
+static void edgeLaplaceDetectBinary(const uint8_t *src, uint8_t *dst, int w, int h, uint8_t thresholdValue) {
+  
+  // pomoćni buffer za blur
+  uint8_t *blur = (uint8_t*)malloc(w * h);
+
+  // 1. Gaussian blur
+  gaussianBlur(src, blur, w, h);
+
+  // 2. rubovi na 0
+  for (int x = 0; x < w; x++) {
+    dst[x] = 0;
+    dst[(h - 1) * w + x] = 0;
+  }
+  for (int y = 0; y < h; y++) {
+    dst[y * w] = 0;
+    dst[y * w + (w - 1)] = 0;
+  }
+
+  // 3. Laplace filter
+  for (int y = 1; y < h - 1; y++) {
+    for (int x = 1; x < w - 1; x++) {
+
+      int idx = y * w + x;
+
+      int lap =
+        -src[(y - 1) * w + (x - 1)] - src[(y - 1) * w + x] - src[(y - 1) * w + (x + 1)] +
+        -src[y * w + (x - 1)]       + 8 * src[y * w + x]   - src[y * w + (x + 1)] +
+        -src[(y + 1) * w + (x - 1)] - src[(y + 1) * w + x] - src[(y + 1) * w + (x + 1)];
+
+      // magnitude (Laplace može biti negativan!)
+      int mag = abs(lap);
+
+      dst[idx] = (mag > thresholdValue) ? 255 : 0;
+    }
+  }
+  free(blur);
+
 }
 
 // static esp_err_t capture_handler(httpd_req_t *req) { //ZAKOMENTIRANO
@@ -262,7 +373,7 @@ static esp_err_t capture_handler(httpd_req_t *req) {
     return ESP_FAIL;
   }
 
-  edgeDetectBinary(fb->buf, edge_buf, w, h, 120);
+  edgeSobelDetectBinary(fb->buf, edge_buf, w, h, 120);
 
   uint8_t *jpg_buf = NULL;
   size_t jpg_len = 0;
@@ -430,7 +541,9 @@ static esp_err_t stream_handler(httpd_req_t *req) {
         fb = NULL;
         res = ESP_FAIL;
       } else {
-        edgeDetectBinary(fb->buf, edge_buf, w, h, 120);
+        //edgeSobelDetectBinary(fb->buf, edge_buf, w, h, 120);
+        edgeLaplaceDetectBinary(fb->buf, edge_buf, w, h, 120);
+        //edgePrewittDetectBinary(fb->buf, edge_buf, w, h, 120);
 
         bool ok = fmt2jpg(edge_buf, w * h, w, h, PIXFORMAT_GRAYSCALE, 80, &_jpg_buf, &_jpg_buf_len);
         free(edge_buf);
