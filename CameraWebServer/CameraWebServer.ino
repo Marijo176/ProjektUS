@@ -9,8 +9,8 @@
 // ===========================
 // Enter your WiFi credentials
 // ===========================
-const char *ssid = "S24";
-const char *password = "maki225883";
+const char *ssid = "Maric";
+const char *password = "maric225";
 
 void startCameraServer();
 void setupLedFlash();
@@ -47,11 +47,11 @@ void setup() {
   // config.fb_location = CAMERA_FB_IN_PSRAM;
   // config.jpeg_quality = 12;
   // config.fb_count = 1;
-  config.frame_size = FRAMESIZE_QVGA;              // 320x240
+  config.frame_size = FRAMESIZE_QQVGA;              // 320x240
   config.pixel_format = PIXFORMAT_GRAYSCALE;       // obrada rubova
   config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   config.fb_location = CAMERA_FB_IN_PSRAM;
-  config.jpeg_quality = 12;                        // koristi se tek kad mi ručno radimo JPEG
+  config.jpeg_quality = 20;                        // koristi se tek kad mi ručno radimo JPEG
   config.fb_count = 1;
 
   // if PSRAM IC present, init with UXGA resolution and higher JPEG quality
@@ -76,7 +76,7 @@ void setup() {
     if (psramFound()) {
     config.fb_location = CAMERA_FB_IN_PSRAM;
     config.fb_count = 1;
-    config.frame_size = FRAMESIZE_QVGA;
+    config.frame_size = FRAMESIZE_QQVGA;
   } else {
     config.fb_location = CAMERA_FB_IN_DRAM;
     config.fb_count = 1;
